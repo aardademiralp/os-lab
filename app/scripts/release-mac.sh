@@ -105,6 +105,18 @@ say "staging the runtime and dashboard"
 node scripts/stage-runtime.mjs
 [ -n "${APPLE_SIGNING_IDENTITY:-}" ] || die "bundled Python helpers need a Developer ID identity in the keychain; import APPLE_CERTIFICATE before building"
 node scripts/stage-python-helper.mjs
+# The Web Lab engine ships as a nested resource binary (staged under
+# resources/os-lab/web-lab). `npx tauri build` below signs the app and
+# notarizes it in this environment, and notarization refuses unsigned nested
+# Mach-O binaries, so sign the staged engine before the build. Skipped
+# silently when the engine is not staged.
+ENGINE_BIN="$APP_DIR/src-tauri/resources/os-lab/web-lab/browser/target/release/weblab"
+if [ -f "$ENGINE_BIN" ]; then
+  say "signing the staged web-lab engine"
+  codesign --force --options runtime --timestamp \
+    --sign "$APPLE_SIGNING_IDENTITY" "$ENGINE_BIN" \
+    || die "signing the web-lab engine failed"
+fi
 if [ -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ] && [ -f "$REPO/secrets/updater/os-lab.key" ]; then
   export TAURI_SIGNING_PRIVATE_KEY="$(cat "$REPO/secrets/updater/os-lab.key")"
 fi
@@ -215,12 +227,18 @@ codesign --verify --deep --strict --verbose=1 "$APP"
 if [ -d "$APP/Contents/PlugIns/OSLabWidgets.appex" ]; then
   codesign --verify --strict "$APP/Contents/PlugIns/OSLabWidgets.appex"
   codesign --verify --strict "$APP/Contents/Frameworks/OSLabWidgetReloader.framework"
-  codesign -d --entitlements - "$APP" 2>/dev/null | grep -q "group.com.keyvanarasteh.oslab" \
-    || die "the app signature is missing the widget App Group entitlement"
-  codesign -d --entitlements - "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>/dev/null | grep -q "com.apple.security.app-sandbox" \
-    || die "the widget extension signature is missing the App Sandbox entitlement"
-  codesign -d --entitlements - "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>/dev/null | grep -q "group.com.keyvanarasteh.oslab" \
-    || die "the widget extension signature is missing the widget App Group entitlement"
+  # codesign -d --entitlements - prints XML on some codesign builds and a DER
+  # blob on others (macOS 15+): DER carries boolean keys as OIDs, so a grep for
+  # the key name finds nothing even though the entitlement is present. Grep the
+  # raw display AND the DER-decoded XML (":-") so the check is format-proof.
+  host_ents="$( { codesign -d --entitlements - "$APP" 2>/dev/null; codesign -d --entitlements :- "$APP" 2>/dev/null; } || true)"
+  appex_ents="$( { codesign -d --entitlements - "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>/dev/null; codesign -d --entitlements :- "$APP/Contents/PlugIns/OSLabWidgets.appex" 2>/dev/null; } || true)"
+  echo "$host_ents" | grep -q "group.com.keyvanarasteh.oslab" \
+    || { echo "the app signature is missing the widget App Group entitlement; entitlements output:"; echo "$host_ents"; die "the app signature is missing the widget App Group entitlement"; }
+  echo "$appex_ents" | grep -q "com.apple.security.app-sandbox" \
+    || { echo "the widget extension signature is missing the App Sandbox entitlement; entitlements output:"; echo "$appex_ents"; die "the widget extension signature is missing the App Sandbox entitlement"; }
+  echo "$appex_ents" | grep -q "group.com.keyvanarasteh.oslab" \
+    || { echo "the widget extension signature is missing the widget App Group entitlement; entitlements output:"; echo "$appex_ents"; die "the widget extension signature is missing the widget App Group entitlement"; }
 fi
 codesign --verify --verbose=1 "$DMG"
 if [ "$NOTARIZE" = 1 ]; then

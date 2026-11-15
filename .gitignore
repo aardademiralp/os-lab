@@ -67,5 +67,12 @@ app/**/*.pfx
 # Built content pack (scripts/build-content.py)
 dist-content/
 
+# Compiled lab C targets & binaries (PENT-07)
+*.exe
+*.out
+*.o
+*.obj
+hedef
+
 # Web Lab engine build artifacts (web-lab/browser)
 web-lab/browser/target/
