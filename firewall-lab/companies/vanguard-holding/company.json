@@ -132,6 +132,15 @@
               "from": "any",
               "to": "any",
               "note": "Ankara Genel Merkez omurgasinda tanimlanmamis tum paketleri sifir toleransla engellemek."
+            },
+            {
+              "action": "deny",
+              "direction": "out",
+              "proto": "any",
+              "port": "any",
+              "from": "any",
+              "to": "any",
+              "note": "Catch-all default deny outbound for host traffic."
             }
           ]
         }
@@ -246,6 +255,15 @@
               "from": "any",
               "to": "any",
               "note": "Istanbul sube guvenlik duvarinda eslesmeyen tum paketleri engellemek."
+            },
+            {
+              "action": "deny",
+              "direction": "out",
+              "proto": "any",
+              "port": "any",
+              "from": "any",
+              "to": "any",
+              "note": "Catch-all default deny outbound for host traffic."
             }
           ]
         }
@@ -351,6 +369,15 @@
               "from": "any",
               "to": "any",
               "note": "Londra aginda eslesmeyen yetkisiz paketleri GDPR uyumu geregi sessizce dusurmek."
+            },
+            {
+              "action": "deny",
+              "direction": "out",
+              "proto": "any",
+              "port": "any",
+              "from": "any",
+              "to": "any",
+              "note": "Catch-all default deny outbound for host traffic."
             }
           ]
         }
@@ -478,6 +505,15 @@
               "from": "any",
               "to": "any",
               "note": "Kampus omurgasinda tanimlanmamis tum paketleri dusurmek ve SIEM telemetrisi uretmek."
+            },
+            {
+              "action": "deny",
+              "direction": "out",
+              "proto": "any",
+              "port": "any",
+              "from": "any",
+              "to": "any",
+              "note": "Catch-all default deny outbound for host traffic."
             }
           ]
         }
@@ -624,6 +660,15 @@
               "from": "10.0.0.0/8",
               "to": "any",
               "note": "[EGRESS DEFENSE] Kurumsal aglardan dis internete cikan eslesmeyen paketleri engellemek."
+            },
+            {
+              "action": "deny",
+              "direction": "out",
+              "proto": "any",
+              "port": "any",
+              "from": "any",
+              "to": "any",
+              "note": "Catch-all default deny outbound for host traffic."
             }
           ]
         }

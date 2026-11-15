@@ -218,7 +218,7 @@ Kataloğa sunulan `firewall-lab/companies/vanguard-holding/company.json` dosyas�
 Katalog reposunun kök dizininde yer alan resmi GitHub CI testleri aşağıdaki komutlar sırasıyla çalıştırılarak yürütülür:
 
 ```bash
-python tools/build-seed.py
+python firewall-lab/scripts/build-seed.py
 python firewall-lab/scripts/catalog.py
 python firewall-lab/scripts/validate.py vanguard-holding
 ```
