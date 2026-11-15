@@ -14,7 +14,8 @@
 #   1. unit suites                          [required; all that --quick runs]
 #      android (pytest), source-lab engine (pytest), cleanup-lab reference
 #      and engine (unittest), cleanup-lab qrust-scan (cargo test; skipped
-#      without cargo), OS-30 linux-lab hardening mocks (unittest)
+#      without cargo), OS-30 linux-lab hardening mocks (unittest), PENT-20
+#      session scribe (unittest)
 #   2. android sample analysis pipeline     [smoke, non-fatal]
 #   3. shell script syntax check (bash -n)  [required]
 #   4. lat.md knowledge-graph check         [if `lat` is installed]
@@ -49,9 +50,18 @@ skip() { printf '%s[skip]%s %s\n'   "$YELLOW" "$RESET" "$*"; SKIP=$((SKIP+1)); }
 
 # --- Resolve a Python with pytest ------------------------------------------
 PY=""
+IS_WINDOWS=0
 pick_python() {
-  for cand in python3 python; do
-    if command -v "$cand" >/dev/null 2>&1; then PY="$(command -v "$cand")"; return 0; fi
+  for cand in "$ROOT/.venv-test/bin/python" "$ROOT/.venv-test/Scripts/python.exe" python3 python; do
+    if command -v "$cand" >/dev/null 2>&1 && "$cand" -c 'import sys' >/dev/null 2>&1; then
+      PY="$(command -v "$cand")"
+      if "$PY" -c "import os, sys; sys.exit(0 if os.name == 'nt' else 1)" >/dev/null 2>&1; then
+        IS_WINDOWS=1
+      else
+        IS_WINDOWS=0
+      fi
+      return 0
+    fi
   done
   return 1
 }
@@ -65,11 +75,20 @@ ensure_pytest() {
       "$PY" -m venv "$venv" || { bad "could not create venv"; return 1; }
     fi
     # shellcheck disable=SC1091
-    . "$venv/bin/activate"
+    if [ -f "$venv/bin/activate" ]; then
+      . "$venv/bin/activate"
+    elif [ -f "$venv/Scripts/activate" ]; then
+      . "$venv/Scripts/activate"
+    fi
     PY="$(command -v python)"
+    if "$PY" -c "import os, sys; sys.exit(0 if os.name == 'nt' else 1)" >/dev/null 2>&1; then
+      IS_WINDOWS=1
+    fi
     "$PY" -m pip install --quiet --upgrade pip
     "$PY" -m pip install --quiet pytest requests
-    [ -f "$ANDROID_LAB/requirements.txt" ] && "$PY" -m pip install --quiet -r "$ANDROID_LAB/requirements.txt"
+    if [ "$IS_WINDOWS" = "0" ] && [ -f "$ANDROID_LAB/requirements.txt" ]; then
+      "$PY" -m pip install --quiet -r "$ANDROID_LAB/requirements.txt"
+    fi
   else
     "$PY" -m pip install --quiet pytest requests || { bad "pytest unavailable and --no-venv set"; return 1; }
   fi
@@ -79,10 +98,18 @@ ensure_pytest() {
 # --- Stage 1: android unit tests -------------------------------------------
 hdr "Stage 1: android unit tests (pytest)"
 if ensure_pytest; then
-  if ( cd "$ANDROID_LAB" && "$PY" -m pytest tests -q ); then
-    ok "android-lab/lab test suite"
+  if [ "$IS_WINDOWS" = "1" ]; then
+    if ( cd "$ANDROID_LAB" && "$PY" -m pytest tests/test_pent20_session_scribe.py tests/test_scope_guard.py tests/test_win_preflight.py tests/test_pinning_detector.py tests/test_app_analyzer.py tests/test_app_reporter.py tests/test_secret_scanner.py tests/test_agentic_engine.py -q ); then
+      ok "android-lab/lab test suite (Windows-compatible subset)"
+    else
+      bad "android-lab/lab test suite (Windows-compatible subset)"
+    fi
   else
-    bad "android-lab/lab test suite"
+    if ( cd "$ANDROID_LAB" && "$PY" -m pytest tests -q ); then
+      ok "android-lab/lab test suite"
+    else
+      bad "android-lab/lab test suite"
+    fi
   fi
 else
   bad "could not prepare a Python environment with pytest"
@@ -90,15 +117,29 @@ fi
 
 # Source Lab runs separately to keep its package/test imports out of Android.
 hdr "Source Lab engine tests (pytest)"
-if [ -n "$PY" ] && ( cd "$ROOT/source-lab/engine" && "$PY" -m pytest tests -q ); then
-  ok "source-lab/engine test suite"
+if [ -n "$PY" ]; then
+  if [ "$IS_WINDOWS" = "1" ]; then
+    if ( cd "$ROOT/source-lab/engine" && "$PY" -m pytest tests -q -k "not test_electron_fuses_asar_contents_and_unpacked_app and not symlink and not test_caps_and_coverage and not test_vfs_disk_contract and not test_vfs_archive_and_overlay" ); then
+      ok "source-lab/engine test suite (Windows-compatible subset)"
+    else
+      bad "source-lab/engine test suite (Windows-compatible subset)"
+    fi
+  else
+    if ( cd "$ROOT/source-lab/engine" && "$PY" -m pytest tests -q ); then
+      ok "source-lab/engine test suite"
+    else
+      bad "source-lab/engine test suite"
+    fi
+  fi
 else
   bad "source-lab/engine test suite"
 fi
 
 # Cleanup Lab reference logic: standard library only, so plain unittest is enough.
 hdr "Cleanup Lab reference tests (unittest)"
-if [ -n "$PY" ] || pick_python; then
+if [ "$IS_WINDOWS" = "1" ]; then
+  skip "cleanup-lab requires POSIX paths and unprivileged symlinks (skipped on Windows)"
+elif [ -n "$PY" ] || pick_python; then
   if ( cd "$ROOT/cleanup-lab/reference/python" && "$PY" -m unittest discover -s tests -p 'test_*.py' -q ); then
     ok "cleanup-lab/reference/python"
   else
@@ -110,7 +151,9 @@ fi
 
 # Cleanup Lab engine: stdlib-only package, plain unittest is enough (CLN-01).
 hdr "Cleanup Lab engine tests (unittest)"
-if [ -n "$PY" ] || pick_python; then
+if [ "$IS_WINDOWS" = "1" ]; then
+  skip "cleanup-lab requires POSIX paths and unprivileged symlinks (skipped on Windows)"
+elif [ -n "$PY" ] || pick_python; then
   if ( cd "$ROOT/cleanup-lab/engine" && "$PY" -m unittest discover -s tests -p 'test_*.py' -q ); then
     ok "cleanup-lab/engine"
   else
@@ -135,13 +178,29 @@ fi
 # and temporary fixtures; it changes nothing on the host.
 hdr "OS-30 linux-lab hardening tests (unittest)"
 if [ -n "$PY" ] || pick_python; then
-  if ( cd "$ROOT" && "$PY" -m unittest discover -s linux-lab/tests -q ); then
-    ok "linux-lab/tests (OS-30 hardening)"
+  if "$PY" -c 'import fcntl, pty, termios' >/dev/null 2>&1; then
+    if ( cd "$ROOT" && "$PY" -m unittest discover -s linux-lab/tests -q ); then
+      ok "linux-lab/tests (OS-30 hardening)"
+    else
+      bad "linux-lab/tests (OS-30 hardening)"
+    fi
   else
-    bad "linux-lab/tests (OS-30 hardening)"
+    skip "linux-lab/tests requires POSIX pty/termios/fcntl (skipped on Windows)"
   fi
 else
   bad "no python3 for linux-lab/tests (OS-30 hardening)"
+fi
+
+# PENT-20 Session Scribe: stdlib-only scoped, hash-chained, AI-disclosed runner.
+hdr "PENT-20 session scribe tests (unittest)"
+if [ -n "$PY" ] || pick_python; then
+  if ( cd "$ROOT" && "$PY" -m unittest discover -s scripts/session_scribe/tests -q ); then
+    ok "scripts/session_scribe/tests (PENT-20 session scribe)"
+  else
+    bad "scripts/session_scribe/tests (PENT-20 session scribe)"
+  fi
+else
+  bad "no python3 for scripts/session_scribe/tests (PENT-20 session scribe)"
 fi
 
 if [ "$QUICK" = "1" ]; then
@@ -164,11 +223,13 @@ else
 
   # --- Stage 3: shell script syntax --------------------------------------
   hdr "Stage 3: shell script syntax (bash -n)"
+  SH_BIN="bash"
+  command -v bash >/dev/null 2>&1 || SH_BIN="${BASH:-sh}"
   sh_fail=0; sh_count=0
   while IFS= read -r -d '' s; do
     sh_count=$((sh_count+1))
-    bash -n "$s" 2>/dev/null || { printf '  %s[fail]%s %s\n' "$RED" "$RESET" "${s#"$ROOT"/}"; sh_fail=$((sh_fail+1)); }
-  done < <(find "$ROOT" \( -type d \( -name .git -o -name node_modules \) \) -prune -o -type f -name '*.sh' -print0)
+    "$SH_BIN" -n "$s" 2>/dev/null || { printf '  %s[fail]%s %s\n' "$RED" "$RESET" "${s#"$ROOT"/}"; sh_fail=$((sh_fail+1)); }
+  done < <(find "$ROOT" \( -type d \( -name .git -o -name node_modules -o -name .venv -o -name .venv-test \) \) -prune -o -type f -name '*.sh' -print0)
   if [ "$sh_fail" -eq 0 ]; then ok "all $sh_count shell scripts parse"; else bad "$sh_fail of $sh_count shell scripts failed bash -n"; fi
 
   # --- Stage 4: lat graph check ------------------------------------------

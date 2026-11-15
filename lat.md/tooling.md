@@ -143,6 +143,34 @@ serves it read-only. The command line checks one target and exits 0 in scope,
 1 refused and 2 for a usage or manifest error, with `--json` for agents and
 scripts. The tests are in [[android-lab/lab/tests/test_scope_guard.py]].
 
+## Session scribe
+
+PENT-20 provides a scoped, hash-chained, AI-disclosed pentest subagent runner
+and signed report exporter in [[scripts/session_scribe/cli.py]].
+
+[[scripts/session_scribe/scope_guard.py#ScopeGuard]] enforces CIDR, domain,
+port and command allowlists from [[scripts/session_scribe/scope.json]] before
+execution. [[scripts/session_scribe/prompt_guard.py#PromptInjectionGuard]]
+blocks direct/indirect prompt injections, obfuscated payloads and secret
+exfiltration before [[scripts/session_scribe/circuit_breaker.py#SubagentCircuitBreaker]]
+locks out repeated offenders until a human-token reset runs.
+[[scripts/session_scribe/redactor.py#SecretRedactor]] masks API keys, Bearer
+tokens, JWTs, AWS secrets, passwords and private keys before persistence, while
+[[scripts/session_scribe/mitre_mapper.py#MitreMapper]] tags each step with
+MITRE ATT&CK metadata and scores session compliance out of 100.
+[[scripts/session_scribe/subagent.py#PentestSubagent]] requires
+[[scripts/session_scribe/subagent.py#AIDisclosure]] metadata, runs approved
+in-scope commands safely and logs refusals without execution.
+[[scripts/session_scribe/audit_logger.py#AuditLogger]] chains every step with
+SHA-256 hashes verified by [[scripts/session_scribe/audit_logger.py#verify_log_chain]],
+[[scripts/session_scribe/forensic_exporter.py#ForensicExporter]] computes binary
+Merkle roots, exports SARIF v2.1.0 findings and seals `EVIDENCE_MANIFEST.json`,
+and [[scripts/session_scribe/report_signer.py#sign_report]] exports HMAC-SHA256
+signed Markdown reports alongside 4-tab dark-mode interactive HTML command
+centers rendered by [[scripts/session_scribe/html_dashboard.py#HTMLDashboard]].
+Tests live in [[scripts/session_scribe/tests/test_session_scribe.py]]. See
+[[scripts/session_scribe/REPORT.md]] (video proof: https://youtu.be/VFLu1myMy_o).
+
 ## Community and contribution
 
 Contribution flow, coding conventions and the authorization stance.
