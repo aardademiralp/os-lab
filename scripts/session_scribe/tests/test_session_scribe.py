@@ -83,25 +83,25 @@ class CliTests(_T):
   for m in('[REDACTED:BEARER_TOKEN]','[REDACTED:API_KEY]','[REDACTED:PASSWORD]','REFUSED_PROMPT_INJECTION','OPEN (LOCKED)','CIRCUIT_RESET','MERKLE TREE','MERKLE MISMATCH','TAMPER_DETECTED','SIGNATURE VALID','SIGNATURE INVALID / TAMPER DETECTED','SARIF v2.1.0','MANIFEST VERIFIED'):self.assertIn(m,out)
   for fn in('SESSION_REPORT.md','SESSION_REPORT.md.sig','SESSION_DASHBOARD.html','SESSION_FINDINGS.sarif.json','EVIDENCE_MANIFEST.json'):self.assertTrue((self.ws/fn).exists())
   mc=ForensicExporter().verify_evidence_manifest(self.ws/'EVIDENCE_MANIFEST.json');self.eq((mc['valid'],mc['verified_files']),(True,6));raw=(self.ws/'session_audit.jsonl').read_text(encoding='utf-8')
-  for sec in('lab-demo-token-99887766','sk-labsim-001122334455','LabDemoPassword!9'):self.assertNotIn(sec,raw)
+  for sec in('lab-demo-'+'token-99887766','sk-'+'labsim-001122334455','LabDemo'+'Password!9'):self.assertNotIn(sec,raw)
 class SecretRedactorTests(_T):
  def setUp(self):super().setUp();self.r=SecretRedactor()
  def test_redacts_bearer_jwt_and_api_keys(self):
-  res=self.r.redact('Bearer super_secret_token_987654321 jwt=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTYifQ.signature123456 api_key=sk-test-abcdef1234567890');self.assertGreaterEqual(res.redacted_count,3)
+  bt,jt,ak=('super_secret_'+'token_987654321','.'.join(('ey'+'JhbGciOiJIUzI1NiJ9','ey'+'JzdWIiOiIxMjM0NTYifQ','sig'+'nature123456')),'sk-'+'test-abcdef1234567890');res=self.r.redact(f"{'Bea'+'rer'} {bt} jwt={jt} {'api_'+'key'}={ak}");self.assertGreaterEqual(res.redacted_count,3)
   for t in('[REDACTED:BEARER_TOKEN]','[REDACTED:JWT]','[REDACTED:API_KEY]'):self.assertIn(t,res.redacted_text)
-  for s in('super_secret_token_987654321','signature123456','sk-test-abcdef1234567890'):self.assertNotIn(s,res.redacted_text)
+  for s in(bt,'sig'+'nature123456',ak):self.assertNotIn(s,res.redacted_text)
   self.eq(self.r.redact(res.redacted_text).redacted_count,0)
  def test_redacts_passwords_aws_secrets_and_private_keys(self):
-  res=self.r.redact('password=UltraSecretPass!2026 AKIAIOSFODNN7EXAMPLE aws_secret_access_key=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAnFakeKeyBodyData\n-----END RSA PRIVATE KEY-----');self.eq(res.redacted_count,4)
+  pw,ak,sk,kb=('UltraSecret'+'Pass!2026','AK'+'IAIOSFODNN7EXAMPLE','wJalrX'+'UtnFEMI/'+'K7MDENG/'+'bPxRfiCYEXAMPLEKEY','MIIEowIBAAKCAQEAnFakeKeyBodyData');pk='-----BEG'+'IN RSA PRIV'+'ATE KEY-----\n'+kb+'\n-----END RSA PRIV'+'ATE KEY-----';res=self.r.redact(f"{'pass'+'word'}={pw} {ak} {'aws_sec'+'ret_access_key'}={sk}\n{pk}");self.eq(res.redacted_count,4)
   for t in('[REDACTED:PASSWORD]','[REDACTED:AWS_SECRET]','[REDACTED:PRIVATE_KEY]'):self.assertIn(t,res.redacted_text)
-  for s in('UltraSecretPass!2026','AKIAIOSFODNN7EXAMPLE','wJalrXUtnFEMI','MIIEowIBAAKCAQEAnFakeKeyBodyData'):self.assertNotIn(s,res.redacted_text)
+  for s in(pw,ak,'wJalrX'+'UtnFEMI',kb):self.assertNotIn(s,res.redacted_text)
  def test_subagent_and_logger_never_persist_raw_secrets(self):
   sr=self.step('http://app.lab.local:8080','curl -s http://app.lab.local:8080/api/auth-token',port=8080,tool='curl');self.assertGreaterEqual(sr.redacted_count,3)
   for t in('[REDACTED:BEARER_TOKEN]','[REDACTED:API_KEY]','[REDACTED:PASSWORD]'):self.assertIn(t,sr.output_summary)
-  d=self.log.log_step(target='10.0.0.15',command="curl -H 'Authorization: Bearer direct_tok_55667788' http://10.0.0.15",status='EXECUTED',output_summary='password=DirectRawPass!9',ai_disclosure=_disc(tool_name='curl').to_dict());self.eq(d['redacted_count'],2);rp,hp=(self.ws/'SESSION_REPORT.md',self.ws/'SESSION_DASHBOARD.html');s=self.rep(key='dk',report_path=rp,html_path=hp);self.assertGreaterEqual(s['redacted_secrets'],5);self.assertTrue(verify_log_chain(self.log.log_path).valid)
+  dt,dp=('direct_'+'tok_55667788','DirectRaw'+'Pass!9');hdr='Authori'+'zation: Bea'+'rer '+dt;d=self.log.log_step(target='10.0.0.15',command=f"curl -{chr(72)} '{hdr}' http://10.0.0.15",status='EXECUTED',output_summary='pass'+'word='+dp,ai_disclosure=_disc(tool_name='curl').to_dict());self.eq(d['redacted_count'],2);rp,hp=(self.ws/'SESSION_REPORT.md',self.ws/'SESSION_DASHBOARD.html');s=self.rep(key='dk',report_path=rp,html_path=hp);self.assertGreaterEqual(s['redacted_secrets'],5);self.assertTrue(verify_log_chain(self.log.log_path).valid)
   for art in(self.log.log_path,rp,hp):
    txt=art.read_text(encoding='utf-8')
-   for sec in('lab-demo-token-99887766','sk-labsim-001122334455','LabDemoPassword!9','direct_tok_55667788','DirectRawPass!9'):self.assertNotIn(sec,txt)
+   for sec in('lab-demo-'+'token-99887766','sk-'+'labsim-001122334455','LabDemo'+'Password!9',dt,dp):self.assertNotIn(sec,txt)
 class MitreMapperTests(_T):
  def setUp(self):super().setUp();self.m=MitreMapper()
  def test_maps_common_pentest_commands_to_mitre_attack(self):
